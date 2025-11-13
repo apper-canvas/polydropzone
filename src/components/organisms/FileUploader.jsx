@@ -1,12 +1,12 @@
-import { useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useCallback, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "react-toastify";
+import { uploadFileService } from "@/services/api/uploadService";
+import { cn } from "@/utils/cn";
+import ApperIcon from "@/components/ApperIcon";
 import DropZone from "@/components/molecules/DropZone";
 import UploadQueue from "@/components/molecules/UploadQueue";
 import Button from "@/components/atoms/Button";
-import ApperIcon from "@/components/ApperIcon";
-import { uploadFileService } from "@/services/api/uploadService";
-import { cn } from "@/utils/cn";
 
 const FileUploader = ({ className = "" }) => {
   const [files, setFiles] = useState([]);
@@ -42,58 +42,44 @@ const FileUploader = ({ className = "" }) => {
     }
   }, [files]);
 
-  const uploadSingleFile = useCallback(async (file) => {
-    return new Promise((resolve, reject) => {
-      // Simulate upload progress
-      let progress = 0;
-      const progressInterval = setInterval(() => {
-        progress += Math.random() * 15;
-        if (progress >= 100) {
-          progress = 100;
-          clearInterval(progressInterval);
-          
-          // Update file status to completed
-          setFiles(prev => prev.map(f => 
-            f.id === file.id 
-              ? { 
-                  ...f, 
-                  status: "completed", 
-                  progress: 100,
-                  uploadedAt: new Date().toISOString()
-                }
-              : f
-          ));
-          
-          resolve();
-        } else {
-          // Update progress
-          setFiles(prev => prev.map(f => 
-            f.id === file.id 
-              ? { ...f, progress: Math.round(progress) }
-              : f
-          ));
-        }
-      }, 200);
+const uploadSingleFile = useCallback(async (file) => {
+    try {
+      const result = await uploadFileService.uploadFile(file, (progress) => {
+        setFiles(prev => prev.map(f => 
+          f.id === file.id 
+            ? { ...f, progress: Math.round(progress) }
+            : f
+        ));
+      });
 
-      // Simulate potential errors (10% chance)
-      setTimeout(() => {
-        if (Math.random() < 0.1 && progress < 100) {
-          clearInterval(progressInterval);
-          setFiles(prev => prev.map(f => 
-            f.id === file.id 
-              ? { 
-                  ...f, 
-                  status: "error", 
-                  error: "Upload failed. Please try again."
-                }
-              : f
-          ));
-          reject(new Error("Upload failed"));
-        }
-      }, Math.random() * 2000 + 1000);
-    });
+      // Update file status to completed
+      setFiles(prev => prev.map(f => 
+        f.id === file.id 
+          ? { 
+              ...f, 
+              status: "completed", 
+              progress: 100,
+              uploadedAt: result.uploadedAt,
+              url: result.url
+            }
+          : f
+      ));
+
+      return result;
+    } catch (error) {
+      // Update file status to error
+      setFiles(prev => prev.map(f => 
+        f.id === file.id 
+          ? { 
+              ...f, 
+              status: "error", 
+              error: error.message || "Upload failed. Please try again."
+            }
+          : f
+      ));
+      throw error;
+    }
   }, []);
-
   const handleUploadAll = useCallback(async () => {
     const pendingFiles = files.filter(f => f.status === "pending" || f.status === "error");
     
@@ -103,13 +89,29 @@ const FileUploader = ({ className = "" }) => {
     }
 
     setIsUploading(true);
-
-    // Update all pending files to uploading status
+// Update all pending files to uploading status
     setFiles(prev => prev.map(file => 
       (file.status === "pending" || file.status === "error")
         ? { ...file, status: "uploading", progress: 0, error: null }
         : file
     ));
+
+    // Create upload session in database when uploading starts
+try {
+      const sessionData = {
+        Name: `Upload Session ${new Date().toLocaleString()}`,
+        files: pendingFiles,
+        totalSize: pendingFiles.reduce((sum, f) => sum + f.size, 0)
+      };
+
+      const session = await uploadFileService.createSession(sessionData);
+      if (session) {
+        toast.success("Upload session created successfully");
+      }
+    } catch (error) {
+      console.error("Failed to create upload session:", error);
+      toast.error("Failed to create upload session");
+    }
 
     try {
       // Upload files in parallel

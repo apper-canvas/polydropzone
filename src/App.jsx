@@ -1,6 +1,7 @@
 import { RouterProvider } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import { router } from "@/router";
+import React from "react";
 
 function App() {
   return (
@@ -16,10 +17,11 @@ function App() {
         pauseOnFocusLoss
         draggable
         pauseOnHover
-        style={{ zIndex: 9999 }}
-      />
+        theme="light"
+        toastClassName={() =>
+          "relative flex p-1 min-h-10 rounded-md justify-between overflow-hidden cursor-pointer"
+        }
+/>
     </>
   );
 }
-
-export default App;

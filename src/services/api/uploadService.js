@@ -1,13 +1,11 @@
-import uploadSessions from "@/services/mockData/uploadSessions.json";
+import { getApperClient } from "@/services/apperClient";
+import { toast } from "react-toastify";
 
-// Simulate network delay
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const tableName = "uploadSessions_c";
 
 export const uploadFileService = {
   // Simulate file upload with progress tracking
   async uploadFile(file, onProgress) {
-    await delay(200);
-    
     return new Promise((resolve, reject) => {
       let progress = 0;
       const progressInterval = setInterval(() => {
@@ -49,69 +47,227 @@ export const uploadFileService = {
 
   // Get all upload sessions
   async getAllSessions() {
-    await delay(300);
-    return [...uploadSessions];
+    try {
+      const apperClient = getApperClient();
+      if (!apperClient) {
+        throw new Error("ApperClient not initialized");
+      }
+
+      const params = {
+        fields: [
+          {"field": {"Name": "Id"}},
+          {"field": {"Name": "Name"}}, 
+          {"field": {"Name": "files_c"}},
+          {"field": {"Name": "totalSize_c"}},
+          {"field": {"Name": "completedCount_c"}},
+          {"field": {"Name": "startedAt_c"}},
+          {"field": {"Name": "completedAt_c"}}
+        ],
+        orderBy: [{"fieldName": "Id", "sorttype": "DESC"}]
+      };
+
+      const response = await apperClient.fetchRecords(tableName, params);
+
+      if (!response.success) {
+        console.error("Failed to fetch upload sessions:", response.message);
+        toast.error(response.message);
+        return [];
+      }
+
+      // Transform data to match expected format
+      return response.data.map(session => ({
+        Id: session.Id,
+        Name: session.Name || `Session ${session.Id}`,
+        files: session.files_c ? JSON.parse(session.files_c) : [],
+        totalSize: session.totalSize_c || 0,
+        completedCount: session.completedCount_c || 0,
+        startedAt: session.startedAt_c,
+        completedAt: session.completedAt_c
+      }));
+    } catch (error) {
+      console.error("Error fetching upload sessions:", error?.response?.data?.message || error);
+      return [];
+    }
   },
 
   // Get session by ID
   async getSessionById(sessionId) {
-    await delay(200);
-    const session = uploadSessions.find(s => s.Id === parseInt(sessionId));
-    if (!session) {
-      throw new Error(`Upload session with ID ${sessionId} not found`);
+    try {
+      const apperClient = getApperClient();
+      if (!apperClient) {
+        throw new Error("ApperClient not initialized");
+      }
+
+      const params = {
+        fields: [
+          {"field": {"Name": "Id"}},
+          {"field": {"Name": "Name"}},
+          {"field": {"Name": "files_c"}},
+          {"field": {"Name": "totalSize_c"}},
+          {"field": {"Name": "completedCount_c"}},
+          {"field": {"Name": "startedAt_c"}},
+          {"field": {"Name": "completedAt_c"}}
+        ]
+      };
+
+      const response = await apperClient.getRecordById(tableName, parseInt(sessionId), params);
+
+      if (!response?.data) {
+        throw new Error(`Upload session with ID ${sessionId} not found`);
+      }
+
+      // Transform data to match expected format
+      const session = response.data;
+      return {
+        Id: session.Id,
+        Name: session.Name || `Session ${session.Id}`,
+        files: session.files_c ? JSON.parse(session.files_c) : [],
+        totalSize: session.totalSize_c || 0,
+        completedCount: session.completedCount_c || 0,
+        startedAt: session.startedAt_c,
+        completedAt: session.completedAt_c
+      };
+    } catch (error) {
+      console.error(`Error fetching session ${sessionId}:`, error?.response?.data?.message || error);
+      throw error;
     }
-    return { ...session };
   },
 
   // Create new upload session
   async createSession(sessionData) {
-    await delay(250);
-    const maxId = Math.max(...uploadSessions.map(s => s.Id), 0);
-    const newSession = {
-      Id: maxId + 1,
-      files: sessionData.files || [],
-      totalSize: sessionData.totalSize || 0,
-      completedCount: 0,
-      startedAt: new Date().toISOString(),
-      completedAt: null,
-      ...sessionData
-    };
-    uploadSessions.push(newSession);
-    return { ...newSession };
+    try {
+      const apperClient = getApperClient();
+      if (!apperClient) {
+        throw new Error("ApperClient not initialized");
+      }
+
+      const params = {
+        records: [{
+          Name: sessionData.Name || `Session ${Date.now()}`,
+          files_c: JSON.stringify(sessionData.files || []),
+          totalSize_c: sessionData.totalSize || 0,
+          completedCount_c: 0,
+          startedAt_c: new Date().toISOString(),
+          completedAt_c: null
+        }]
+      };
+
+      const response = await apperClient.createRecord(tableName, params);
+
+      if (!response.success) {
+        console.error("Failed to create upload session:", response.message);
+        toast.error(response.message);
+        return null;
+      }
+
+      if (response.results && response.results.length > 0) {
+        const successful = response.results.filter(r => r.success);
+        if (successful.length > 0) {
+          const created = successful[0].data;
+          return {
+            Id: created.Id,
+            Name: created.Name,
+            files: created.files_c ? JSON.parse(created.files_c) : [],
+            totalSize: created.totalSize_c || 0,
+            completedCount: created.completedCount_c || 0,
+            startedAt: created.startedAt_c,
+            completedAt: created.completedAt_c
+          };
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error("Error creating upload session:", error?.response?.data?.message || error);
+      throw error;
+    }
   },
 
   // Update upload session
   async updateSession(sessionId, updateData) {
-    await delay(200);
-    const sessionIndex = uploadSessions.findIndex(s => s.Id === parseInt(sessionId));
-    if (sessionIndex === -1) {
-      throw new Error(`Upload session with ID ${sessionId} not found`);
+    try {
+      const apperClient = getApperClient();
+      if (!apperClient) {
+        throw new Error("ApperClient not initialized");
+      }
+
+      const updateRecord = {
+        Id: parseInt(sessionId)
+      };
+
+      // Only include updateable fields that have values
+      if (updateData.Name !== undefined) updateRecord.Name = updateData.Name;
+      if (updateData.files !== undefined) updateRecord.files_c = JSON.stringify(updateData.files);
+      if (updateData.totalSize !== undefined) updateRecord.totalSize_c = updateData.totalSize;
+      if (updateData.completedCount !== undefined) updateRecord.completedCount_c = updateData.completedCount;
+      if (updateData.completedAt !== undefined) updateRecord.completedAt_c = updateData.completedAt;
+
+      const params = {
+        records: [updateRecord]
+      };
+
+      const response = await apperClient.updateRecord(tableName, params);
+
+      if (!response.success) {
+        console.error("Failed to update upload session:", response.message);
+        toast.error(response.message);
+        return null;
+      }
+
+      if (response.results && response.results.length > 0) {
+        const successful = response.results.filter(r => r.success);
+        if (successful.length > 0) {
+          const updated = successful[0].data;
+          return {
+            Id: updated.Id,
+            Name: updated.Name,
+            files: updated.files_c ? JSON.parse(updated.files_c) : [],
+            totalSize: updated.totalSize_c || 0,
+            completedCount: updated.completedCount_c || 0,
+            startedAt: updated.startedAt_c,
+            completedAt: updated.completedAt_c
+          };
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error("Error updating upload session:", error?.response?.data?.message || error);
+      throw error;
     }
-    
-    uploadSessions[sessionIndex] = {
-      ...uploadSessions[sessionIndex],
-      ...updateData
-    };
-    
-    return { ...uploadSessions[sessionIndex] };
   },
 
   // Delete upload session
   async deleteSession(sessionId) {
-    await delay(200);
-    const sessionIndex = uploadSessions.findIndex(s => s.Id === parseInt(sessionId));
-    if (sessionIndex === -1) {
-      throw new Error(`Upload session with ID ${sessionId} not found`);
+    try {
+      const apperClient = getApperClient();
+      if (!apperClient) {
+        throw new Error("ApperClient not initialized");
+      }
+
+      const params = {
+        RecordIds: [parseInt(sessionId)]
+      };
+
+      const response = await apperClient.deleteRecord(tableName, params);
+
+      if (!response.success) {
+        console.error("Failed to delete upload session:", response.message);
+        toast.error(response.message);
+        return false;
+      }
+
+      if (response.results && response.results.length > 0) {
+        const successful = response.results.filter(r => r.success);
+        return successful.length > 0;
+      }
+      return false;
+    } catch (error) {
+      console.error("Error deleting upload session:", error?.response?.data?.message || error);
+      throw error;
     }
-    
-    const deletedSession = uploadSessions.splice(sessionIndex, 1)[0];
-    return { ...deletedSession };
   },
 
   // Validate file before upload
   async validateFile(file, maxSize = 100 * 1024 * 1024) {
-    await delay(100);
-    
     const errors = [];
     
     if (file.size > maxSize) {
